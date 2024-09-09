@@ -1,0 +1,262 @@
+#imports
+import pandas as pd
+import random
+import time
+import datetime
+
+# File paths
+PARK_DATA_FILE = "/Users/somi/parkData.csv"
+RESERVATION_DATA_FILE = "/Users/somi/Downloads/reserveData.csv"
+
+# Load data from CSV files
+def load_data():
+    park_data = pd.read_csv(PARK_DATA_FILE)
+    reserv_data = pd.read_csv(RESERVATION_DATA_FILE)
+    return (list(park_data['spot']), 
+            list(park_data['status']), 
+            list(park_data['time']), 
+            list(park_data['reserved']),
+            list(reserv_data['ticketNo']),
+            list(reserv_data['hours']))
+
+# Save data to CSV files
+def update_parking_data(spots, status, reserv_time, act_time):
+    data = {'spot': spots, 'status': status, 'reserved': reserv_time, 'time': act_time}
+    pd.DataFrame(data).to_csv(PARK_DATA_FILE, index=False)
+
+def update_reservation_data(tickets, reserv_hours):
+    data = {'ticketNo': tickets, 'hours': reserv_hours}
+    pd.DataFrame(data).to_csv(RESERVATION_DATA_FILE, index=False)
+
+# Get all available spots considering reservations
+def get_all_available_spots(spots, status, total_reservations):
+    available_spots = [spot for i, spot in enumerate(spots) if status[i] == 'available']
+    return available_spots[:len(available_spots) - total_reservations]
+
+# Recommend nearby available slots
+def recommend_slots(slot, spots, status, num=1):
+    index = spots.index(slot)
+    r_spots = []
+    for i in range(1, len(spots) // 2):
+        for temp in (index + i, index - i):
+            if 0 <= temp < len(spots) and status[temp] == 'available':
+                r_spots.append(spots[temp])
+    r_spots.sort(key=lambda s: (s[0] == slot[0], s))
+    return r_spots[:num]
+
+# Display menu and get user choice
+def menu_viewer(name, options):
+    print(f"\n\033[1m{name} Menu\033[0m")
+    for i, option in enumerate(options, 1):
+        print(f"Enter \033[94m{i}\033[0m to {option}")
+    print(f"Enter \033[94m{len(options) + 1}\033[0m to Quit")
+    return input("\033[91mEnter your choice: \033[0m")
+
+# Calculate charge for a given slot
+def get_charge(slot, rate, spots, status, act_time, reserv_time):
+    index = spots.index(slot)
+    if status[index] in ['occupied', 'reserved']:
+        time_diff = (time.time() - act_time[index]) / 3600
+        if reserv_time[index] > 0:
+            if time_diff < reserv_time[index]:
+                print("Congrats! Total charge covered by the reservation.")
+                return 0
+            else:
+                print("Reservation expired. You have to pay for the extra time.")
+                return max(int((time_diff - reserv_time[index]) * rate), 0)
+        else:
+            return int(time_diff * rate)
+    return 0
+
+# Function to handle reservations
+def get_reservation(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate):
+    available_spots = get_all_available_spots(spots, status, len(tickets))
+
+    if not available_spots:
+        print("Sorry. No available spots")
+        if input("Do you want to quit? (y/n): ") == 'y':
+            exit()
+        else:
+            main()
+
+    choice = menu_viewer("Reservation", ["Dynamic reservation", "Reserve a spot", "Back"])
+    if choice == "1":  # Dynamic reservation
+        print(f"Dynamic reservation: Number of spots available:", len(available_spots))
+        hour = int(input("Enter the number of hours you want to reserve: "))
+        print(f"That will be: Rs.",hour * parking_rate)
+
+        if input("Do you want to reserve? (y/n): ") == 'y':
+            ticket_no = random.randint(125, 999)
+            while ticket_no in tickets:
+                ticket_no = random.randint(125, 999)
+            tickets.append(ticket_no)
+            reserv_hours.append(hour)
+            print(f"Your ticket number is",ticket_no)
+            update_reservation_data(tickets, reserv_hours)
+            exit()
+        else:
+            get_reservation(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+
+    elif choice == "2":  # Reserve a spot
+        print(f"Reserve a spot: Available spots:",available_spots)
+        slot = input("Enter the spot you want to reserve: ")
+        if slot in available_spots:
+            print(f"You have reserved {slot} with hourly rate of Rs.",parking_rate)
+            index = spots.index(slot)
+            status[index] = 'occupied'
+            act_time[index] = time.time()
+            reserv_time[index] = 0
+            update_parking_data(spots, status, reserv_time, act_time)
+            exit()
+        else:
+            print(f"The spot is not available. We recommend you to reserve", recommend_slots(slot, spots, status)[0])
+            get_reservation(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+
+    elif choice == "3":
+        main()
+    else:
+        exit()
+
+# Function to handle available reservations
+def avail_reservation(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate):
+    if not tickets:
+        print("No reservations available")
+        if input("Do you want to quit? (y/n): ") == 'y':
+            exit()
+        else:
+            main()
+
+    ticket_no = int(input("Enter your ticket number: "))
+    if ticket_no in tickets:
+        if input("Do you want to avail your reservation now? (y/n): ") == 'y':
+            available_spots = get_all_available_spots(spots, status, len(tickets))
+            print(f"Available spots:", available_spots)
+            spot = input("Enter the spot you want to park at: ")
+            if spot in spots and status[spots.index(spot)] == 'available':
+                if input(f"Do you want to park at {spot}? (y/n): ") == 'y':
+                    index = spots.index(spot)
+                    print(f"You have parked at", spot)
+                    status[index] = 'occupied'
+                    act_time[index] = time.time()
+                    reserv_time[index] = reserv_hours[tickets.index(ticket_no)]
+                    reserv_hours.pop(tickets.index(ticket_no))
+                    tickets.remove(ticket_no)
+                    update_parking_data(spots, status, reserv_time, act_time)
+                    update_reservation_data(tickets, reserv_hours)
+                    exit()
+                else:
+                    spot = recommend_slots(spot, spots, status)[0]
+                    if input(f"Do you want to park at {spot}? (y/n): ") == 'y':
+                        print(f"You have parked at", spot)
+                        index = spots.index(spot)
+                        status[index] = 'occupied'
+                        act_time[index] = time.time()
+                        reserv_time[index] = 0
+                        update_parking_data(spots, status, reserv_time, act_time)
+                    else:
+                        avail_reservation(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+            else:
+                print("Invalid or unavailable spot")
+                avail_reservation(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+        else:
+            print("Ticket number not found")
+            main()
+    else:
+        print("Ticket number not found")
+        main()
+
+# Function to handle parking
+def parking(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate):
+    choice = menu_viewer("Parking", ["Park at a spot.", "Avail reservation.", "Back"])
+
+    if choice == "1":  # Park at a spot
+        slot = input("Enter the spot you want to park at: ")
+        if slot in spots:
+            index = spots.index(slot)
+            if status[index] == 'available':
+                if input(f"You can park at", slot, "Do you want to park here? (y/n): ") == 'y':
+                    print(f"You have parked at", slot)
+                    status[index] = 'occupied'
+                    act_time[index] = time.time()
+                    reserv_time[index] = 0
+                    update_parking_data(spots, status, reserv_time, act_time)
+                    exit()
+                else:
+                    parking(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+            else:
+                print(f"The spot is not available. We recommend you to park at", recommend_slots(slot, spots, status)[0])
+                parking(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+        else:
+            print("Spot not found")
+            main()
+
+    elif choice == "2":  # Available reservation
+        avail_reservation(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+
+    elif choice == "3":  # Back
+        main()
+            
+    else:
+        exit()
+
+def leave_parking(spots, status, act_time, reserv_time, parking_rate):
+    choice = menu_viewer("Leave Parking", ["Leave Parking", "Back"])
+
+    if choice == "1":  # Leave Parking
+        slot = input("Enter the spot you want to leave: ")
+
+        if slot in spots:
+            index = spots.index(slot)
+            if status[index] in ['occupied', 'reserved']:
+                print(f"You have parked at", slot, "You have to pay Rs.", get_charge(slot, parking_rate, spots, status, act_time, reserv_time))
+
+                if input("Do you want to leave this spot? (y/n): ") == 'y':
+                    print(f"You have left", slot)
+                    status[index] = 'available'
+                    act_time[index] = 0
+                    reserv_time[index] = 0
+                    update_parking_data(spots, status, reserv_time, act_time)
+                    exit()
+                else:
+                    leave_parking(spots, status, act_time, reserv_time, parking_rate)
+            else:
+                print(f"You have not parked at", slot)
+                leave_parking(spots, status, act_time, reserv_time, parking_rate)
+        else:
+            print("Spot not found")
+            leave_parking(spots, status, act_time, reserv_time, parking_rate)
+
+    elif choice == "2":  # Back
+        main(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+
+    else:
+        exit()
+        
+def main(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate):
+    choice = menu_viewer("Main", ["Check Status", "Reserve", "Park", "Leave"])
+
+    if choice == "1":  # Check Status
+        available_spots = get_all_available_spots(spots, status, len(tickets))
+        if available_spots:
+            print("Available spots: ", len(available_spots), available_spots)
+        else:
+            print("No available spots")
+        main(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+
+    elif choice == "2":  # Reserve
+        get_reservation(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+
+    elif choice == "3":  # Park
+        parking(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+
+    elif choice == "4":  # Leave
+        leave_parking(spots, status, act_time, reserv_time, parking_rate)
+    else:
+        exit()
+
+# To ensure the main function is called when the script runs
+if __name__ == "__main__":
+    spots, status, act_time, reserv_time, tickets, reserv_hours = load_data()
+    parking_rate = 50  # Assuming a parking rate of Rs. 50 per hour
+    main(spots, status, act_time, reserv_time, tickets, reserv_hours, parking_rate)
+
