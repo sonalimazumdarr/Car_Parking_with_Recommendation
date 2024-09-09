@@ -1,0 +1,51 @@
+# Data Generator
+
+# import libraries
+import pandas as pd
+import random
+import time
+
+#functions
+def generateParkData(fileName='parkData.csv', number=100): # generate data for parking lot with 100 spots
+    alphs = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    tempsLot = []
+    tempStatus = []
+    tempTime = []
+    reserved = [] # 0 for not reserved, integer for reserved for same hours
+    for j in alphs:
+        for i in range(1, 11):
+            tempsLot.append(j+str(i))
+            if random.randint(0, 10) > 6:
+                tempStatus.append('available')
+                reserved.append(0)
+                tempTime.append(0)
+            else:
+                if random.randint(0,10) > 7:
+                    tempStatus.append('reserved')
+                    tempReserved = random.randint(3,12)
+                    reserved.append(tempReserved)
+                    tempTime.append(time.time() - random.randint(tempReserved*3600, 86400))
+                else:
+                    tempStatus.append('occupied')
+                    reserved.append(0)
+                    tempTime.append(time.time() - random.randint(0,86400))
+
+    data = {'spot':tempsLot, 'status':tempStatus, 'reserved':reserved, 'time':tempTime}
+    df = pd.DataFrame(data)
+    df.to_csv(fileName, index=False)
+
+def generateReservaData(fileName='reservaData.csv', number=5): # generate data for 5 dynamic reservations
+    ticketNo = []
+    hours = random.sample(range(1, 12), number)
+    ticketNo = random.sample(range(125,999), number)
+
+    data = {'ticketNo':ticketNo, 'hours':hours}
+    df = pd.DataFrame(data)
+    df.to_csv(fileName, index=False)
+
+def main():
+    generateParkData()
+    generateReservaData()
+
+if __name__ == '__main__':
+    main()
